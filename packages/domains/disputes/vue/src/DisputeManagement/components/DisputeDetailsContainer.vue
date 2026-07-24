@@ -4,7 +4,7 @@ import type { IDisputeDetail } from '@integration-components/types/api/models/di
 import { DisputeFlowState, provideDisputeFlow } from '../composables/useDisputeFlow';
 import DisputeDetails from './DisputeDetails.vue';
 import type { DisputeManagementProps } from '../types';
-import '../styles/DisputeManagement.scss';
+import styles from './DisputeData.module.scss';
 
 const props = defineProps<DisputeManagementProps>();
 const dispute = ref<IDisputeDetail | undefined>();
@@ -21,7 +21,7 @@ watch(
 </script>
 
 <template>
-    <div class="adyen-pe-dispute__container">
+    <div :class="styles.container">
         <DisputeDetails
             :id="props.id"
             :hide-title="props.hideTitle"

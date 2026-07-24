@@ -26,6 +26,7 @@ import DisputeDataProperties from './DisputeDataProperties.vue';
 import DisputeIssuerComments from './DisputeIssuerComments.vue';
 import DisputeStatusTag from './DisputeStatusTag.vue';
 import type { DisputeDataAlertMode, DisputeManagementProps } from '../types';
+import styles from './DisputeData.module.scss';
 
 const props = defineProps<{
     disputeId: string;
@@ -217,12 +218,12 @@ const paymentMethodDetail = computed(() =>
 </script>
 
 <template>
-    <div class="adyen-pe-dispute-data">
+    <div :class="styles.root">
         <div v-if="showLoadingPlaceholder" aria-busy="true">
             <BentoLoadingIndicator />
         </div>
 
-        <div v-else-if="errorState" class="adyen-pe-dispute-data__error-container">
+        <div v-else-if="errorState" :class="styles.errorContainer">
             <BentoAlert type="critical">
                 {{ errorState.title }}
                 <template #description>
@@ -245,11 +246,11 @@ const paymentMethodDetail = computed(() =>
         </div>
 
         <template v-else-if="dispute">
-            <div class="adyen-pe-dispute-data__status-box">
+            <div :class="styles.statusBox">
                 <BentoCard>
                     <template #content>
-                        <div class="adyen-pe-dispute-data__summary">
-                            <div class="adyen-pe-dispute-data__summary-tags">
+                        <div :class="styles.summary">
+                            <div :class="styles.summaryTags">
                                 <BentoTag v-if="disputeType" :label="disputeType" data-testid="dispute-type-tag" />
                                 <DisputeStatusTag v-if="!isFraudNotification" :dispute="dispute.dispute" />
                             </div>
@@ -257,11 +258,11 @@ const paymentMethodDetail = computed(() =>
                                 {{ i18n.amount(dispute.dispute.amount.value, dispute.dispute.amount.currency, { hideCurrency: true }) }}
                                 {{ dispute.dispute.amount.currency }}
                             </BentoTypography>
-                            <div v-if="paymentMethodType" class="adyen-pe-dispute-data__payment-method">
-                                <div class="adyen-pe-dispute-data__payment-method-logo-container">
+                            <div v-if="paymentMethodType" :class="styles.paymentMethod">
+                                <div :class="styles.paymentMethodLogoContainer">
                                     <BentoPaymentMethod :type="paymentMethodType" />
                                 </div>
-                                <BentoTypography v-if="paymentMethodDetail" variant="title" class="adyen-pe-dispute-data__payment-method-detail">
+                                <BentoTypography v-if="paymentMethodDetail" variant="title">
                                     {{ paymentMethodDetail }}
                                 </BentoTypography>
                             </div>
@@ -281,7 +282,7 @@ const paymentMethodDetail = computed(() =>
                 :extra-fields="extraFields"
             />
 
-            <div v-if="actionButtons.length || extraButtons.length" class="adyen-pe-dispute-data__action-bar">
+            <div v-if="actionButtons.length || extraButtons.length" :class="styles.actionBar">
                 <BentoButtonActions v-if="actionButtons.length" :actions="actionButtons" />
                 <BentoButton
                     v-for="button in extraButtons"
