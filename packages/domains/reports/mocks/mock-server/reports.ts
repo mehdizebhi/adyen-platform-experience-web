@@ -1,4 +1,4 @@
-import { http, HttpResponse } from 'msw';
+import { delay as mswDelay, http, HttpResponse } from 'msw';
 import { BALANCE_ACCOUNTS_SINGLE } from '@integration-components/testing/fixtures';
 import { compareDates, delay, getPaginationLinks } from '@integration-components/testing/msw';
 import { REPORTS_ENDPOINTS as endpoints } from '../endpoints';
@@ -10,6 +10,46 @@ const serverError = false;
 
 const DEFAULT_PAGE_LIMIT = 10;
 const DEFAULT_SORT_DIRECTION = 'desc';
+
+export const createDownloadReportHandler = (options?: { enforceDownloadDelay?: boolean }) => {
+    return http.get(endpoints.downloadReport, async ({ request }) => {
+        const url = new URL(request.url);
+        const createdAt = url.searchParams.get('createdAt');
+        const reportDate = new Date(createdAt || Date.now()).toISOString().split('T', 1)[0]?.split('-');
+        const filename = `${['balanceaccount', 'payout', 'report'].concat(reportDate!).filter(Boolean).join('_')}.csv`;
+
+        const buffer = await fetch(`/mockFiles/report.csv`).then(response => response.arrayBuffer());
+        const delayFn = options?.enforceDownloadDelay ? mswDelay : delay;
+        await delayFn(2000);
+
+        if (downloadError) {
+            return new HttpResponse(
+                JSON.stringify({
+                    type: 'https://docs.adyen.com/errors/forbidden',
+                    errorCode: '999_429_001',
+                    title: 'Forbidden',
+                    detail: 'Balance Account does not belong to Account Holder',
+                    requestId: '769ac4ce59f0f159ad672d38d3291e91',
+                    status: 429,
+                }),
+                {
+                    status: 429,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                }
+            );
+        }
+
+        return new HttpResponse(buffer, {
+            headers: {
+                'Content-Disposition': `attachment; filename=${filename}`,
+                'Content-Type': 'text/csv',
+            },
+            status: 200,
+        });
+    });
+};
 
 export const reportsMock = [
     http.get(endpoints.reports, async ({ request }) => {
@@ -64,42 +104,7 @@ export const reportsMock = [
         return HttpResponse.json({ data, _links: getPaginationLinks(cursor, limit, reports.length) });
     }),
 
-    http.get(endpoints.downloadReport, async ({ request }) => {
-        const url = new URL(request.url);
-        const createdAt = url.searchParams.get('createdAt');
-        const reportDate = new Date(createdAt || Date.now()).toISOString().split('T', 1)[0]?.split('-');
-        const filename = `${['balanceaccount', 'payout', 'report'].concat(reportDate!).filter(Boolean).join('_')}.csv`;
-
-        const buffer = await fetch(`/mockFiles/report.csv`).then(response => response.arrayBuffer());
-
-        await delay(2000);
-        if (downloadError) {
-            return new HttpResponse(
-                JSON.stringify({
-                    type: 'https://docs.adyen.com/errors/forbidden',
-                    errorCode: '999_429_001',
-                    title: 'Forbidden',
-                    detail: 'Balance Account does not belong to Account Holder',
-                    requestId: '769ac4ce59f0f159ad672d38d3291e91',
-                    status: 429,
-                }),
-                {
-                    status: 429,
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                }
-            );
-        }
-
-        return new HttpResponse(buffer, {
-            headers: {
-                'Content-Disposition': `attachment; filename=${filename}`,
-                'Content-Type': 'text/csv',
-            },
-            status: 200,
-        });
-    }),
+    createDownloadReportHandler({ enforceDownloadDelay: false }),
 ];
 
 export const REPORTS_OVERVIEW_HANDLERS = {
