@@ -20,6 +20,7 @@ import type { CustomColumn, IReport, OnDataRetrievedCallback, CustomDataRetrieve
 import type { StringWithAutocompleteOptions } from '@integration-components/utils/types';
 import { AdyenPlatformExperienceError, TranslationKey } from '@integration-components/core';
 import { getReportType, REPORTS_TABLE_CLASS_NAMES, REPORTS_DOWNLOAD_DISABLED_TIMEOUT, REPORTS_TABLE_FIELDS } from '../../../../domain/src';
+import SmallLoadingIndicator from './SmallLoadingIndicator.vue';
 import '../styles/ReportsTable.scss';
 
 export type ReportsTableFields = (typeof REPORTS_TABLE_FIELDS)[number];
@@ -52,6 +53,11 @@ const config = useConfigContext();
 // ── Download freeze logic ──
 const frozen = ref(false);
 let freezeTimeoutId: ReturnType<typeof setTimeout> | undefined;
+const downloadingReportKey = ref<string>();
+
+function getReportKey(report: IReport) {
+    return `${report.createdAt}-${report.type}`;
+}
 
 function freeze() {
     if (frozen.value) return;
@@ -95,8 +101,12 @@ async function handleDownload(item: IReport) {
     const downloadReport = config.endpoints.downloadReport;
     if (typeof downloadReport !== 'function') return;
 
+    const reportKey = getReportKey(item);
+    if (frozen.value || downloadingReportKey.value === reportKey) return;
+
     freeze();
     alert.value = null;
+    downloadingReportKey.value = reportKey;
 
     try {
         const result = await downloadReport(
@@ -121,6 +131,10 @@ async function handleDownload(item: IReport) {
         }
     } catch (e) {
         onDownloadErrorAlert(e as AdyenPlatformExperienceError);
+    } finally {
+        if (downloadingReportKey.value === reportKey) {
+            downloadingReportKey.value = undefined;
+        }
     }
 }
 
@@ -189,15 +203,24 @@ const gridData = computed<BentoDatagridDataItem[]>(() => {
 });
 
 // ── Row actions ──
-const getRowActions: BentoDataGridRowActionsProp = (item: BentoDatagridDataItem) => [
-    {
-        title: i18n.get('reports.overview.list.controls.downloadReport.label'),
-        event: () => handleDownload(item._raw as IReport),
-        tooltipText: i18n.get('reports.overview.list.controls.downloadReport.label'),
-        disabled: frozen.value,
-        iconLeft: DownloadIcon,
-    },
-];
+const getRowActions: BentoDataGridRowActionsProp = (item: BentoDatagridDataItem) => {
+    const report = item._raw as IReport;
+    const isDownloading = downloadingReportKey.value === getReportKey(report);
+
+    const label = isDownloading
+        ? `${i18n.get('common.actions.download.labels.inProgress')}..`
+        : i18n.get('reports.overview.list.controls.downloadReport.label');
+
+    return [
+        {
+            title: label,
+            event: () => handleDownload(report),
+            tooltipText: label,
+            disabled: frozen.value || isDownloading,
+            iconLeft: isDownloading ? SmallLoadingIndicator : DownloadIcon,
+        },
+    ];
+};
 
 const paginationProps = computed(() => {
     if (!props.showPagination) return undefined;
