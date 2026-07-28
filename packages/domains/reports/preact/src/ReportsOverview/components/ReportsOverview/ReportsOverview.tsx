@@ -32,7 +32,7 @@ export const ReportsOverview = ({
     const { defaultParams, nowTimestamp, refreshNowTimestamp } = useDefaultOverviewFilterParams('reports', activeBalanceAccount);
 
     const getReports = useCallback(
-        async (pageRequestParams: Record<FilterParam | 'cursor', string>, signal?: AbortSignal) => {
+        async ({ [FilterParam.BALANCE_ACCOUNT]: _, ...pageRequestParams }: Record<FilterParam | 'cursor', string>, signal?: AbortSignal) => {
             const requestOptions = { signal, errorLevel: 'error' } as const;
 
             return reportsEndpointCall!(requestOptions, {
@@ -67,6 +67,14 @@ export const ReportsOverview = ({
             enabled: !!activeBalanceAccount?.id && !!reportsEndpointCall,
         });
 
+    const updateBalanceAccount = useCallback(
+        (event: Parameters<typeof onBalanceAccountSelection>[0]) => {
+            onBalanceAccountSelection(event);
+            updateFilters({ [FilterParam.BALANCE_ACCOUNT]: event.target?.value });
+        },
+        [onBalanceAccountSelection, updateFilters]
+    );
+
     const mergeCustomData = useCallback(
         ({ records, retrievedData }: { records: IReport[]; retrievedData: CustomDataRetrieved[] }) =>
             mergeRecords(records, retrievedData, (modifiedRecord, record) => modifiedRecord.createdAt === record.createdAt),
@@ -94,7 +102,7 @@ export const ReportsOverview = ({
                 <BalanceAccountSelector
                     activeBalanceAccount={activeBalanceAccount}
                     balanceAccountSelectionOptions={balanceAccountSelectionOptions}
-                    onBalanceAccountSelection={onBalanceAccountSelection}
+                    onBalanceAccountSelection={updateBalanceAccount}
                 />
                 <DateFilter
                     canResetFilters={canResetFilters}

@@ -1,19 +1,18 @@
 import { http, HttpResponse } from 'msw';
 import { BALANCE_ACCOUNTS_SINGLE } from '@integration-components/testing/fixtures';
 import { compareDates, delay, getPaginationLinks } from '@integration-components/testing/msw';
+import { REPORTS_ENDPOINTS as endpoints } from '../endpoints';
 import { getReports } from '../mock-data/reports';
-import { REPORTS_ENDPOINTS } from '../endpoints';
 
-const DEFAULT_SORT_DIRECTION = 'desc';
-const REPORTS = REPORTS_ENDPOINTS.reports;
-const DOWNLOAD = REPORTS_ENDPOINTS.downloadReport;
+const downloadError = false;
 const networkError = false;
 const serverError = false;
-const downloadError = false;
-const defaultPaginationLimit = 20;
+
+const DEFAULT_PAGE_LIMIT = 10;
+const DEFAULT_SORT_DIRECTION = 'desc';
 
 export const reportsMock = [
-    http.get(`${REPORTS}`, async ({ request }) => {
+    http.get(endpoints.reports, async ({ request }) => {
         if (networkError) {
             return HttpResponse.error();
         }
@@ -41,8 +40,8 @@ export const reportsMock = [
         const balanceAccountId = url.searchParams.get('balanceAccountId');
         const createdSince = url.searchParams.get('createdSince');
         const createdUntil = url.searchParams.get('createdUntil');
-        const limit = +(url.searchParams.get('limit') ?? defaultPaginationLimit);
         const cursor = +(url.searchParams.get('cursor') ?? 0);
+        const limit = +(url.searchParams.get('limit') ?? DEFAULT_PAGE_LIMIT);
         const sortDirection = url.searchParams.get('sortDirection') ?? DEFAULT_SORT_DIRECTION;
 
         let reports = balanceAccountId ? getReports(balanceAccountId) : [];
@@ -65,7 +64,7 @@ export const reportsMock = [
         return HttpResponse.json({ data, _links: getPaginationLinks(cursor, limit, reports.length) });
     }),
 
-    http.get(`${DOWNLOAD}`, async ({ request }) => {
+    http.get(endpoints.downloadReport, async ({ request }) => {
         const url = new URL(request.url);
         const createdAt = url.searchParams.get('createdAt');
         const reportDate = new Date(createdAt || Date.now()).toISOString().split('T', 1)[0]?.split('-');
@@ -106,28 +105,28 @@ export const reportsMock = [
 export const REPORTS_OVERVIEW_HANDLERS = {
     singleBalanceAccount: {
         handlers: [
-            http.get(REPORTS_ENDPOINTS.balanceAccounts, () => {
+            http.get(endpoints.balanceAccounts, () => {
                 return HttpResponse.json({ data: BALANCE_ACCOUNTS_SINGLE });
             }),
         ],
     },
     emptyList: {
         handlers: [
-            http.get(REPORTS, () => {
+            http.get(endpoints.reports, () => {
                 return HttpResponse.json({ data: [], _links: {} });
             }),
         ],
     },
     errorList: {
         handlers: [
-            http.get(REPORTS, () => {
+            http.get(endpoints.reports, () => {
                 return HttpResponse.error();
             }),
         ],
     },
     downloadError: {
         handlers: [
-            http.get(DOWNLOAD, () => {
+            http.get(endpoints.downloadReport, () => {
                 return new HttpResponse(
                     JSON.stringify({
                         type: 'https://docs.adyen.com/errors/forbidden',
