@@ -9,7 +9,7 @@ import { usePayoutDetails } from '../composables/usePayoutDetails';
 import { PAYOUT_TABLE_FIELDS } from '../../PayoutsOverview/constants';
 import type { PayoutDetailsCustomization } from '../types';
 import type { CustomDataRetrieved } from '@integration-components/types';
-import './PayoutDetailsContainer.scss';
+import styles from './PayoutDetailsContainer.module.scss';
 
 const props = defineProps<{
     id: string;
@@ -76,7 +76,7 @@ const showLoadingPlaceholder = computed(() => isFetching.value && !data.value &&
 </script>
 
 <template>
-    <div class="adyen-pe-payout-details">
+    <div>
         <div v-if="showError" class="adyen-pe-data-overview-error">
             <p>{{ i18n.get('payouts.details.errors.unavailable') }}</p>
             <BentoButton v-if="props.onContactSupport" variant="tertiary" @click="props.onContactSupport">
@@ -84,7 +84,7 @@ const showLoadingPlaceholder = computed(() => isFetching.value && !data.value &&
             </BentoButton>
         </div>
 
-        <div v-else-if="showLoadingPlaceholder" class="adyen-pe-payout-details__loading" aria-busy="true">
+        <div v-else-if="showLoadingPlaceholder" :class="styles.loading" aria-busy="true">
             <BentoLoadingIndicator />
         </div>
 
