@@ -6,7 +6,11 @@ import { PAYMENT_LINK_CREATION_CLASS_NAMES } from '../../../../../domain/src';
 import type { PaymentLinkCreationFormValues, CreatedPaymentLink, PaymentLinkCreationProps } from '../../../../../domain/src';
 import './PaymentLinkCreationContainer.scss';
 
-const props = defineProps<PaymentLinkCreationProps>();
+type PaymentLinkCreationContainerProps = PaymentLinkCreationProps & {
+    embeddedInOverview?: boolean;
+};
+
+const props = defineProps<PaymentLinkCreationContainerProps>();
 
 type CreationState = 'Creation' | 'Success';
 
@@ -35,6 +39,7 @@ function handleShowDetails() {
             :hide-title="props.hideTitle"
             :on-creation-dismiss="props.onCreationDismiss"
             :on-contact-support="props.onContactSupport"
+            :embedded-in-overview="props.embeddedInOverview"
             @payment-link-created="handleCreated"
         />
         <FormSuccess v-else :payment-link-url="paymentLinkUrl" :on-show-details="handleShowDetails" />
