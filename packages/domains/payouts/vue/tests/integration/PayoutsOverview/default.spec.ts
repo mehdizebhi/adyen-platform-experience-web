@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { clickOutsideDialog, goToStory } from '@integration-components/testing/playwright/utils';
+import { clickOutsideDialog, expectBalanceAccountPaginationReset, goToStory } from '@integration-components/testing/playwright/utils';
 import { testBalanceAccountFilter, testDateRangeFilter } from '../../../../fixtures/integration/filters';
 import { openPayoutDetailsModal } from './shared/utils';
 
@@ -80,4 +80,9 @@ test.describe('Filters', () => {
 
     testBalanceAccountFilter({ variant });
     testDateRangeFilter({ variant, now });
+});
+
+test('should reset pagination when selecting another balance account', async ({ page }) => {
+    await goToStory(page, { id: STORY_ID, args: { allowLimitSelection: 'false', preferredLimit: '5' } });
+    await expectBalanceAccountPaginationReset({ endpointPath: '/payouts', page, variant: 'Bento' });
 });

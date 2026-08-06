@@ -143,7 +143,14 @@ export const DisputesOverview = ({
     const modalOptions = useMemo(() => ({ dispute: disputeDetails }), [disputeDetails]);
 
     const getDisputes = useCallback(
-        async ({ [LAST_REFRESH_TIMESTAMP_PARAM]: _, ...pageRequestParams }: DisputesPageRequestParams, signal?: AbortSignal) => {
+        async (
+            {
+                [FilterParam.BALANCE_ACCOUNT]: _balanceAccount,
+                [LAST_REFRESH_TIMESTAMP_PARAM]: _lastRefreshTimestamp,
+                ...pageRequestParams
+            }: DisputesPageRequestParams,
+            signal?: AbortSignal
+        ) => {
             const requestOptions = { signal, errorLevel: 'error' } as const;
 
             return getDisputesCall!(requestOptions, {
@@ -187,6 +194,14 @@ export const DisputesOverview = ({
             preferredLimitOptions,
             enabled: !!activeBalanceAccount?.id && !!getDisputesCall,
         });
+
+    const updateBalanceAccount = useCallback(
+        (event: Parameters<typeof onBalanceAccountSelection>[0]) => {
+            onBalanceAccountSelection(event);
+            updateFilters({ [FilterParam.BALANCE_ACCOUNT]: event.target?.value });
+        },
+        [onBalanceAccountSelection, updateFilters]
+    );
 
     const cachedDisputeReasonsFilter = useRef<string | undefined>(undefined);
 
@@ -332,7 +347,7 @@ export const DisputesOverview = ({
                         <BalanceAccountSelector
                             activeBalanceAccount={activeBalanceAccount}
                             balanceAccountSelectionOptions={balanceAccountSelectionOptions}
-                            onBalanceAccountSelection={onBalanceAccountSelection}
+                            onBalanceAccountSelection={updateBalanceAccount}
                         />
                         <DateFilter
                             canResetFilters={canResetFilters}
