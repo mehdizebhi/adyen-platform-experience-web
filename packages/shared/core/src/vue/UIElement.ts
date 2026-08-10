@@ -6,7 +6,7 @@ import UIElementProvider from './UIElementProvider.vue';
 
 export const createRefreshContext = () => {
     const refreshCount = ref(0);
-    const refresh = () => void refreshCount.value++;
+    const refresh: () => void = () => refreshCount.value++;
     return { refresh, refreshCount };
 };
 
