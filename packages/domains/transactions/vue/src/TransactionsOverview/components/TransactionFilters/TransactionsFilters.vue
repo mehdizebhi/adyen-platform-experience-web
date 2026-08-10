@@ -2,16 +2,15 @@
 import { ref, computed, watch } from 'vue';
 import { useCoreContext, useEventDispatcherContext } from '@integration-components/core/vue';
 import { BentoFilterBar, BentoFilterItemType } from '@adyen/bento-vue3';
-import type { BentoFilterBarModel, BentoFilterValues, BentoDateRangePickerValue } from '@adyen/bento-vue3';
-import { useTransactionsOverviewContext } from '../../composables/useTransactionsOverviewState';
+import type { BentoDateRangePickerValue, BentoFilterBarModel, BentoFilterBarValue, BentoFilterValues } from '@adyen/bento-vue3';
 import {
-    createQuickSelectRanges,
-    quickSelectDateRanges,
-    toUTCISOStringKeepingLocalDateTime,
-    endOfDay,
-    startOfDay,
-    now,
-} from '@integration-components/utils';
+    sortMultiSelection,
+    useBalanceAccountFilterState,
+    useDateRangeFilterState,
+    useSortedMultiSelection,
+} from '@integration-components/composables-vue';
+import { useTransactionsOverviewContext } from '../../composables/useTransactionsOverviewState';
+import { createQuickSelectRanges, quickSelectDateRanges, startOfDay, now, DAY_IN_MS } from '@integration-components/utils';
 import {
     TRANSACTION_ANALYTICS_CATEGORY,
     TRANSACTION_ANALYTICS_SUBCATEGORY_LIST,
@@ -26,59 +25,68 @@ const props = defineProps<{
     balanceAccounts?: IBalanceAccountBase[];
 }>();
 
-const { i18n } = useCoreContext();
-const userEvents = useEventDispatcherContext();
 const { filters, isTransactionsView, onFiltersChange, insightsCurrency, setInsightsCurrency, currenciesLookupResult } =
     useTransactionsOverviewContext();
 
+const { i18n } = useCoreContext();
+const userEvents = useEventDispatcherContext();
 const availableCurrencies = computed(() => currenciesLookupResult.sortedCurrencies.value);
 
-const eventSubCategory = computed(() =>
-    isTransactionsView.value ? TRANSACTION_ANALYTICS_SUBCATEGORY_LIST : TRANSACTION_ANALYTICS_SUBCATEGORY_INSIGHTS
-);
+const eventSubCategory = computed(() => {
+    // prettier-ignore
+    return isTransactionsView.value
+        ? TRANSACTION_ANALYTICS_SUBCATEGORY_LIST
+        : TRANSACTION_ANALYTICS_SUBCATEGORY_INSIGHTS;
+});
 
 // ── Local filter state (snapshot from shared state once, never read back from it) ──
-const selectedBalanceAccountId = ref<string | undefined>(filters.value.balanceAccountId);
+const { selectedBalanceAccountId, hasMultipleBalanceAccounts, balanceAccountOptions } = useBalanceAccountFilterState({
+    balanceAccounts: () => props.balanceAccounts,
+    initialValue: filters.value.balanceAccountId,
+});
 
 watch(
     () => filters.value.balanceAccountId,
-    newId => {
-        selectedBalanceAccountId.value = newId;
-    }
+    newId => (selectedBalanceAccountId.value = newId)
 );
-const selectedCategories = ref<string[]>([...(filters.value.categories as string[])]);
-const selectedStatuses = ref<string[]>([...(filters.value.statuses as string[])]);
-const selectedCurrencies = ref<string[]>([...(filters.value.currencies as string[])]);
+
+const { selectedValues: selectedCategories, setSelectedValues: setSelectedCategories } = useSortedMultiSelection(filters.value.categories);
+const { selectedValues: selectedStatuses } = useSortedMultiSelection(filters.value.statuses);
+const { selectedValues: selectedCurrencies, setSelectedValues: setSelectedCurrencies } = useSortedMultiSelection(filters.value.currencies);
 const selectedPspReference = ref<string | undefined>(filters.value.paymentPspReference);
 
-const defaultDateRange = quickSelectDateRanges.last30Days;
 const earliestDate = startOfDay(getEarliestTransactionDate(now));
+
+const { defaultDateRange, selectedDateRange, getDateRangeFilterOptions, getDateRangeQueryParams } = useDateRangeFilterState({
+    defaultValue: quickSelectDateRanges.last180Days,
+    initialValue: {
+        startDate: new Date(filters.value.createdSince),
+        endDate: new Date(filters.value.createdUntil),
+    },
+    earliestDate,
+});
 
 const dateRangeDefaultValue = {
     startDate: new Date(defaultDateRange.startDate),
     endDate: new Date(defaultDateRange.endDate),
 };
 
-const selectedDateRange = ref<BentoDateRangePickerValue>({
-    startDate: new Date(filters.value.createdSince),
-    endDate: new Date(filters.value.createdUntil),
-});
-
-// Auto-select first balance account
-watch(
-    () => props.balanceAccounts,
-    accounts => {
-        if (accounts?.length && !selectedBalanceAccountId.value) {
-            selectedBalanceAccountId.value = accounts[0]?.id;
-        }
+const initialDefaultFilterValues = {
+    balanceAccountId: props.balanceAccounts?.[0]?.id ?? selectedBalanceAccountId.value,
+    categories: [...selectedCategories.value],
+    currencies: [...selectedCurrencies.value],
+    paymentPspReference: selectedPspReference.value || undefined,
+    statuses: [...selectedStatuses.value],
+    dateRange: {
+        startDate: new Date(selectedDateRange.value.startDate),
+        endDate: new Date(selectedDateRange.value.endDate),
     },
-    { immediate: true }
-);
+};
 
 // When balance account changes, reset currency filter
 watch(selectedBalanceAccountId, (newId, oldId) => {
     if (newId !== oldId) {
-        selectedCurrencies.value = [];
+        setSelectedCurrencies();
         setInsightsCurrency(undefined);
     }
 });
@@ -98,6 +106,7 @@ const quickSelectRanges = createQuickSelectRanges(
     {
         last7Days: quickSelectDateRanges.last7Days,
         last30Days: quickSelectDateRanges.last30Days,
+        last180Days: quickSelectDateRanges.last180Days,
         thisWeek: quickSelectDateRanges.thisWeek,
         lastWeek: quickSelectDateRanges.lastWeek,
         thisMonth: quickSelectDateRanges.thisMonth,
@@ -110,18 +119,14 @@ const quickSelectRanges = createQuickSelectRanges(
 const sharedFilterItems = computed<BentoFilterBarModel>(() => {
     const items: BentoFilterBarModel = [];
 
-    if (props.balanceAccounts && props.balanceAccounts.length > 1) {
+    if (hasMultipleBalanceAccounts.value) {
         items.push({
             field: 'balanceAccountId',
             label: i18n.get('common.filters.types.account.label'),
             type: BentoFilterItemType.SELECT,
-            defaultValue: props.balanceAccounts[0]?.id,
+            defaultValue: balanceAccountOptions.value[0]?.value,
             options: {
-                listboxItems: props.balanceAccounts.map((a: IBalanceAccountBase) => ({
-                    label: a.description || a.id,
-                    value: a.id,
-                    description: a.description ? a.id : undefined,
-                })),
+                listboxItems: balanceAccountOptions.value,
             },
         });
     }
@@ -132,11 +137,8 @@ const sharedFilterItems = computed<BentoFilterBarModel>(() => {
         type: BentoFilterItemType.DATE_RANGE,
         defaultValue: dateRangeDefaultValue,
         options: {
-            min: earliestDate,
-            max: now,
             numberOfMonths: 1,
-            quickSelectRanges,
-            isDateDisabled: (date: Date) => date.getTime() < earliestDate.getTime() || date.getTime() > now.getTime(),
+            ...getDateRangeFilterOptions({ quickSelectRanges, disableUnavailableDates: true }),
         },
     });
 
@@ -146,7 +148,7 @@ const sharedFilterItems = computed<BentoFilterBarModel>(() => {
 const sharedFilterValues = computed<BentoFilterValues>(() => {
     const values: BentoFilterValues = [{ field: 'dateRange', value: selectedDateRange.value }];
 
-    if (props.balanceAccounts && props.balanceAccounts.length > 1) {
+    if (hasMultipleBalanceAccounts.value) {
         values.push({ field: 'balanceAccountId', value: selectedBalanceAccountId.value });
     }
 
@@ -207,59 +209,187 @@ const FILTER_LABELS: Partial<Record<string, FilterType>> = {
     insightsCurrency: 'Currency filter',
 };
 
-function fireFilterEvent(field: string, value: unknown) {
+function getCustomDateRangeEventValue(dateRange: BentoDateRangePickerValue) {
+    const startTimestamp = dateRange.startDate.getTime();
+    return `${startTimestamp},${Math.min(startTimestamp + DAY_IN_MS, Date.now())}`;
+}
+
+function fireFilterEvent(field: string, value: unknown, actionType?: 'reset' | 'update') {
     const label = FILTER_LABELS[field];
     if (!label) return;
+
     const isEmpty = Array.isArray(value) ? value.length === 0 : !value;
-    const actionType = isEmpty ? 'reset' : 'update';
+    const eventActionType = actionType ?? (isEmpty ? 'reset' : 'update');
     // PSP reference value is always null to avoid accidentally leaking PII
-    const eventValue = actionType === 'update' ? (field === 'paymentPspReference' ? null : (value as MixpanelProperty)) : undefined;
+    const dateRange = value as BentoDateRangePickerValue | undefined;
+
+    let eventValue: MixpanelProperty | null | undefined;
+
+    if (eventActionType === 'update') {
+        if (field === 'paymentPspReference') {
+            eventValue = null;
+        } else if (field === 'dateRange' && dateRange) {
+            eventValue = quickSelectRanges.find(range => range.value === dateRange.range)?.label ?? getCustomDateRangeEventValue(dateRange);
+        } else if (Array.isArray(value)) {
+            eventValue = String(value);
+        } else {
+            eventValue = value as MixpanelProperty;
+        }
+    }
+
     userEvents.addModifyFilterEvent?.({
         category: TRANSACTION_ANALYTICS_CATEGORY,
         subCategory: eventSubCategory.value,
         label,
-        actionType,
+        actionType: eventActionType,
         ...(eventValue !== undefined && { value: eventValue }),
     });
 }
 
-function onFilterInput(updatedValues: BentoFilterValues) {
-    for (const fv of updatedValues) {
-        if (fv.field === 'balanceAccountId') {
-            selectedBalanceAccountId.value = fv.value as string | undefined;
-        } else if (fv.field === 'dateRange' && fv.value) {
-            selectedDateRange.value = fv.value as BentoDateRangePickerValue;
-        } else if (fv.field === 'categories') {
-            selectedCategories.value = (fv.value as string[]) ?? [];
-        } else if (fv.field === 'currencies') {
-            selectedCurrencies.value = (fv.value as string[]) ?? [];
-        } else if (fv.field === 'paymentPspReference') {
-            selectedPspReference.value = (fv.value as string) || undefined;
+function hasFilterValueChanged(field: string, value: unknown) {
+    switch (field) {
+        case 'balanceAccountId':
+            return selectedBalanceAccountId.value !== value;
+        case 'dateRange': {
+            const dateRange = value as BentoDateRangePickerValue | undefined;
+            return (
+                !dateRange ||
+                selectedDateRange.value.startDate.getTime() !== dateRange.startDate.getTime() ||
+                selectedDateRange.value.endDate.getTime() !== dateRange.endDate.getTime()
+            );
         }
-        fireFilterEvent(fv.field, fv.value);
+        case 'categories':
+            return JSON.stringify(selectedCategories.value) !== JSON.stringify(value ?? []);
+        case 'currencies':
+            return JSON.stringify(selectedCurrencies.value) !== JSON.stringify(value ?? []);
+        case 'paymentPspReference':
+            return selectedPspReference.value !== (value || undefined);
+        default:
+            return false;
+    }
+}
+
+function normalizeFilterValue(field: string, value: unknown): BentoFilterBarValue | undefined {
+    switch (field) {
+        case 'categories':
+        case 'currencies':
+        case 'statuses':
+            return sortMultiSelection((value as string[]) ?? []);
+        case 'paymentPspReference':
+            return (value as string) || undefined;
+        default:
+            return value as BentoFilterBarValue | undefined;
+    }
+}
+
+function isDefaultFilterValue(field: string, value: unknown) {
+    switch (field) {
+        case 'balanceAccountId':
+            return value === initialDefaultFilterValues.balanceAccountId;
+        case 'categories':
+        case 'currencies':
+        case 'statuses':
+            return JSON.stringify(value) === JSON.stringify(initialDefaultFilterValues[field]);
+        case 'paymentPspReference':
+            return value === initialDefaultFilterValues.paymentPspReference;
+        case 'dateRange': {
+            const dateRange = value as BentoDateRangePickerValue | undefined;
+            return (
+                !!dateRange &&
+                dateRange.startDate.getTime() === initialDefaultFilterValues.dateRange.startDate.getTime() &&
+                dateRange.endDate.getTime() === initialDefaultFilterValues.dateRange.endDate.getTime()
+            );
+        }
+        default:
+            return false;
+    }
+}
+
+function normalizeFilterValues(updatedValues: BentoFilterValues) {
+    return updatedValues.map(filterValue => ({
+        ...filterValue,
+        value: normalizeFilterValue(filterValue.field, filterValue.value),
+    }));
+}
+
+function areAllChangedFiltersReset(values: BentoFilterValues) {
+    const changedValues = values.filter(filterValue => hasFilterValueChanged(filterValue.field, filterValue.value));
+    return changedValues.length > 1 && changedValues.every(filterValue => isDefaultFilterValue(filterValue.field, filterValue.value));
+}
+
+function updateFilterState(field: string, value: unknown) {
+    switch (field) {
+        case 'balanceAccountId':
+            selectedBalanceAccountId.value = value as string | undefined;
+            break;
+        case 'dateRange':
+            if (value) {
+                selectedDateRange.value = value as BentoDateRangePickerValue;
+            }
+            break;
+        case 'categories':
+            setSelectedCategories(value as TransactionsFilters['categories']);
+            break;
+        case 'currencies':
+            setSelectedCurrencies(value as string[]);
+            break;
+        case 'paymentPspReference':
+            selectedPspReference.value = (value as string) || undefined;
+            break;
+    }
+}
+
+function reportFilterChange(field: string, value: unknown, previousPspReference: string | undefined, resetAllFilters: boolean) {
+    if (resetAllFilters) {
+        fireFilterEvent(field, value, 'reset');
+        return;
+    }
+
+    const isResettingFilter = isDefaultFilterValue(field, value);
+    const isResettingDateRange = field === 'dateRange' && isResettingFilter;
+    const isResettingPspReference = isResettingFilter && field === 'paymentPspReference' && previousPspReference;
+
+    if (isResettingDateRange) {
+        fireFilterEvent(field, { ...(value as BentoDateRangePickerValue), range: defaultDateRange.range }, 'update');
+    } else if (isResettingPspReference) {
+        fireFilterEvent(field, value, 'update');
+    }
+
+    fireFilterEvent(field, value, isResettingFilter ? 'reset' : undefined);
+}
+
+function onFilterInput(updatedValues: BentoFilterValues) {
+    const normalizedValues = normalizeFilterValues(updatedValues);
+    const resetAllFilters = areAllChangedFiltersReset(normalizedValues);
+
+    for (const fv of normalizedValues) {
+        const value = fv.value;
+        const changed = hasFilterValueChanged(fv.field, value);
+        const previousPspReference = selectedPspReference.value;
+
+        updateFilterState(fv.field, value);
+
+        if (changed) {
+            reportFilterChange(fv.field, value, previousPspReference, resetAllFilters);
+        }
     }
 }
 
 // Propagate filter changes upward — watch individual local refs to avoid circular deps
 function buildFilterParams(): TransactionsFilters {
-    const createdSince = new Date(Math.max(startOfDay(selectedDateRange.value.startDate).getTime(), earliestDate.getTime()));
-
     return {
         balanceAccountId: selectedBalanceAccountId.value,
         categories: selectedCategories.value as any,
         statuses: selectedStatuses.value as any,
         currencies: selectedCurrencies.value as any,
-        createdSince: toUTCISOStringKeepingLocalDateTime(createdSince),
-        createdUntil: toUTCISOStringKeepingLocalDateTime(endOfDay(selectedDateRange.value.endDate)),
+        ...getDateRangeQueryParams(),
         paymentPspReference: selectedPspReference.value,
     };
 }
 
 watch(
     [selectedBalanceAccountId, selectedCategories, selectedStatuses, selectedCurrencies, selectedDateRange, selectedPspReference],
-    () => {
-        onFiltersChange(buildFilterParams());
-    },
+    () => onFiltersChange(buildFilterParams()),
     { immediate: true }
 );
 
@@ -282,22 +412,27 @@ const insightsFilterConfig = computed<BentoFilterBarModel>(() => {
 
 const insightsFilterValues = computed<BentoFilterValues>(() => {
     const values = [...sharedFilterValues.value];
-
     values.push({ field: 'insightsCurrency', value: insightsCurrency.value });
-
     return values;
 });
 
 function onInsightsFilterInput(updatedValues: BentoFilterValues) {
     for (const fv of updatedValues) {
-        if (fv.field === 'balanceAccountId') {
-            selectedBalanceAccountId.value = fv.value as string | undefined;
-        } else if (fv.field === 'dateRange' && fv.value) {
-            selectedDateRange.value = fv.value as BentoDateRangePickerValue;
-        } else if (fv.field === 'insightsCurrency') {
-            setInsightsCurrency((fv.value as string) || undefined);
+        const changed = fv.field === 'insightsCurrency' ? insightsCurrency.value !== fv.value : hasFilterValueChanged(fv.field, fv.value);
+
+        switch (fv.field) {
+            case 'balanceAccountId':
+                selectedBalanceAccountId.value = fv.value as string | undefined;
+                break;
+            case 'dateRange':
+                if (fv.value) selectedDateRange.value = fv.value as BentoDateRangePickerValue;
+                break;
+            case 'insightsCurrency':
+                setInsightsCurrency((fv.value as string) || undefined);
+                break;
         }
-        fireFilterEvent(fv.field, fv.value);
+
+        if (changed) fireFilterEvent(fv.field, fv.value);
     }
 }
 </script>
